@@ -3,9 +3,10 @@
 /**
  * MTech Colab full-stack launcher.
  *
- * Deliberately self-contained: the Colab runtime only needs this launcher plus
- * the source tree. It starts the local OpenHands agent-server, automation
- * backend, Vite frontend, and a same-origin ingress proxy on port 8000.
+ * Colab-safe launcher. It starts OpenHands agent-server, automation, Vite,
+ * and the ingress proxy from the current MTech checkout. It intentionally
+ * imports the compatibility canvas_ui_tool module from tools/ so the current
+ * OpenHands server can preload legacy conversation metadata without failing.
  */
 
 import { spawn } from "node:child_process";
@@ -20,7 +21,7 @@ const PORT = Number(process.env.PORT || 8000);
 const AGENT_PORT = Number(process.env.OH_CANVAS_SAFE_BACKEND_PORT || 18000);
 const AUTOMATION_PORT = Number(process.env.OH_CANVAS_SAFE_AUTOMATION_PORT || 18001);
 const VITE_PORT = Number(process.env.VITE_FRONTEND_PORT || process.env.VITE_PORT || 3001);
-const VSCODE_PORT = AGENT_PORT + 1000;
+const VSCODE_PORT = Number(process.env.OH_CANVAS_SAFE_VSCODE_PORT || (AGENT_PORT + 1));
 const STATE_DIR = process.env.OH_CANVAS_SAFE_STATE_DIR || join(process.env.HOME || "/content/mtech-home", ".openhands", "agent-canvas");
 const API_KEY_FILE = join(STATE_DIR, "api-key.txt");
 const SECRET_KEY_FILE = join(STATE_DIR, "secret-key.txt");
@@ -94,7 +95,8 @@ function proxyHttp(req, res) {
     method: req.method,
     headers: { ...req.headers, host: `${target.hostname}:${target.port}` },
   }, r => {
-    res.writeHead(r.statusCode || 502, r.headers);
+    const headers = { ...r.headers };
+    res.writeHead(r.statusCode || 502, headers);
     r.pipe(res);
   });
   upstream.on("error", e => {
@@ -132,7 +134,7 @@ function startIngress() {
 
 async function seedSecret(apiKey) {
   try {
-    await fetch(`http://127.0.0.1:${AGENT_PORT}/api/settings/secrets`, {
+    const response = await fetch(`http://127.0.0.1:${AGENT_PORT}/api/settings/secrets`, {
       method: "PUT",
       headers: { "content-type": "application/json", "X-Session-API-Key": apiKey },
       body: JSON.stringify({
@@ -142,6 +144,7 @@ async function seedSecret(apiKey) {
       }),
       signal: AbortSignal.timeout(10000),
     });
+    if (!response.ok) log("secrets", `warning: seed returned HTTP ${response.status}`);
   } catch (e) { log("secrets", `warning: ${e.message}`); }
 }
 
@@ -167,11 +170,12 @@ async function main() {
     OH_EXTRA_PYTHON_PATH: join(ROOT, "tools"),
     TMUX_TMPDIR: join(STATE_DIR, "tmux"),
     OH_VSCODE_PORT: String(VSCODE_PORT),
+    OH_VSCODE_BASE_PATH: "/vscode",
     OPENHANDS_SUPPRESS_BANNER: "1",
   };
   for (const p of [agentEnv.OH_CONVERSATIONS_PATH, agentEnv.OH_BASH_EVENTS_DIR, agentEnv.TMUX_TMPDIR]) mkdirSync(p, { recursive: true });
 
-  const agent = spawnService("agent-server", python, ["-m", "openhands.agent_server", "--host", "127.0.0.1", "--port", String(AGENT_PORT), "--import-modules", "canvas_ui_tool"], agentEnv);
+  const agent = spawnService("agent-server", python, ["-m", "openhands.agent_server", "--host", "127.0.0.1", "--port", String(AGENT_PORT), "--extra-python-path", join(ROOT, "tools"), "--import-modules", "canvas_ui_tool"], agentEnv);
   const ready = await waitFor(`http://127.0.0.1:${AGENT_PORT}/server_info`, 90000);
   if (!ready) throw new Error(`Agent Server did not open ${AGENT_PORT}`);
   log("agent-server", `READY http://127.0.0.1:${AGENT_PORT}`);
@@ -217,7 +221,10 @@ function shutdown(code = 0) {
   for (const [name, p] of processes) {
     try {
       if (typeof p.close === "function") p.close();
-      else if (p.pid) process.kill(p.pid, "SIGTERM");
+      else if (p.pid) {
+        if (process.platform === "win32") p.kill("SIGTERM");
+        else process.kill(-p.pid, "SIGTERM");
+      }
     } catch {}
     log(name, "stopping");
   }
