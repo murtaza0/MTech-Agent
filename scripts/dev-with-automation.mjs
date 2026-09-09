@@ -3,10 +3,11 @@
 /**
  * MTech Colab full-stack launcher.
  *
- * Colab-safe launcher. It starts OpenHands agent-server, automation, Vite,
- * and ingress from the current MTech checkout. The compatibility module under
- * tools/ is explicitly added to PYTHONPATH and imported by agent-server so
- * legacy persisted conversation metadata does not abort startup.
+ * Colab-safe launcher. It starts the MTech API, OpenHands agent-server,
+ * automation, Vite, and ingress from the current MTech checkout. The
+ * compatibility module under tools/ is explicitly added to PYTHONPATH and
+ * imported by agent-server so legacy persisted conversation metadata does not
+ * abort startup.
  */
 
 import { spawn } from "node:child_process";
@@ -18,6 +19,7 @@ import process from "node:process";
 
 const ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
 const PORT = Number(process.env.PORT || 8000);
+const API_PORT = Number(process.env.OH_CANVAS_SAFE_API_PORT || 18002);
 const AGENT_PORT = Number(process.env.OH_CANVAS_SAFE_BACKEND_PORT || 18000);
 const AUTOMATION_PORT = Number(process.env.OH_CANVAS_SAFE_AUTOMATION_PORT || 18001);
 const VITE_PORT = Number(process.env.VITE_FRONTEND_PORT || process.env.VITE_PORT || 3001);
@@ -82,6 +84,7 @@ function routeFor(pathname) {
   if (pathname === "/server_info" || pathname === "/health" || pathname === "/ready" || pathname === "/alive" || pathname === "/docs" || pathname === "/redoc" || pathname === "/openapi.json" || pathname === "/sockets" || pathname.startsWith("/sockets/")) return `http://127.0.0.1:${AGENT_PORT}`;
   if (pathname === "/vscode" || pathname.startsWith("/vscode/")) return `http://127.0.0.1:${VSCODE_PORT}`;
   if (pathname === "/api/automation" || pathname.startsWith("/api/automation/")) return `http://127.0.0.1:${AUTOMATION_PORT}`;
+  if (pathname === "/api/healthz" || pathname === "/api/healthz/" || pathname === "/api/mtech" || pathname.startsWith("/api/mtech/")) return `http://127.0.0.1:${API_PORT}`;
   if (pathname === "/api" || pathname.startsWith("/api/")) return `http://127.0.0.1:${AGENT_PORT}`;
   return `http://127.0.0.1:${VITE_PORT}`;
 }
@@ -177,10 +180,26 @@ async function main() {
   for (const p of [agentEnv.OH_CONVERSATIONS_PATH, agentEnv.OH_BASH_EVENTS_DIR, agentEnv.TMUX_TMPDIR]) mkdirSync(p, { recursive: true });
 
   const agent = spawnService("agent-server", python, ["-m", "openhands.agent_server", "--host", "127.0.0.1", "--port", String(AGENT_PORT), "--extra-python-path", toolsDir, "--import-modules", "canvas_ui_tool"], agentEnv);
-  const ready = await waitFor(`http://127.0.0.1:${AGENT_PORT}/server_info`, 90000);
-  if (!ready) throw new Error(`Agent Server did not open ${AGENT_PORT}`);
+  const agentReady = await waitFor(`http://127.0.0.1:${AGENT_PORT}/server_info`, 90000);
+  if (!agentReady) throw new Error(`Agent Server did not open ${AGENT_PORT}`);
   log("agent-server", `READY http://127.0.0.1:${AGENT_PORT}`);
   await seedSecret(apiKey);
+
+  const api = spawnService("mtech-api", "pnpm", ["--filter", "@workspace/api-server", "dev"], {
+    PORT: String(API_PORT),
+    NODE_ENV: "development",
+    MTECH_STATE_DIR: STATE_DIR,
+    MTECH_PROJECTS_DIR: join(STATE_DIR, "workspaces"),
+    LOCAL_BACKEND_API_KEY: apiKey,
+    OPENHANDS_AGENT_SERVER_URL: `http://127.0.0.1:${AGENT_PORT}`,
+    OPENHANDS_AGENT_SERVER_API_KEY: apiKey,
+  });
+  const apiReady = await waitFor(`http://127.0.0.1:${API_PORT}/api/mtech/health`, 90000);
+  if (!apiReady) {
+    try { if (api?.pid) process.kill(-api.pid, "SIGTERM"); } catch {}
+    throw new Error(`MTech API did not open ${API_PORT}`);
+  }
+  log("mtech-api", `READY http://127.0.0.1:${API_PORT}`);
 
   spawnService("automation", "uvx", ["--from", "openhands-automation", "uvicorn", "openhands.automation.app:app", "--host", "127.0.0.1", "--port", String(AUTOMATION_PORT)], {
     PYTHONUTF8: "1",
@@ -211,6 +230,7 @@ async function main() {
   startIngress();
   log("mtech", "FULL STACK READY");
   log("mtech", `UI: http://127.0.0.1:${PORT}`);
+  log("mtech", `MTech API: http://127.0.0.1:${API_PORT}`);
   log("mtech", `Agent: http://127.0.0.1:${AGENT_PORT}`);
   log("mtech", `Automation: http://127.0.0.1:${AUTOMATION_PORT}`);
   log("mtech", `Frontend: http://127.0.0.1:${VITE_PORT}`);
