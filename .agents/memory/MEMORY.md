@@ -1,0 +1,1 @@
+- [Workspace restoration](workspace-restoration.md) — after moving an uploaded pnpm app into a project, restore generated contracts and rebuild library declarations before leaf typechecks.

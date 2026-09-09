@@ -1,0 +1,516 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: MTech local AI agent workspace API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+  - name: mtech
+  - name: projects
+  - name: llm
+  - name: agents
+  - name: tasks
+  - name: activity
+  - name: preview
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /mtech/health:
+    get:
+      operationId: getMtechHealth
+      tags: [mtech]
+      summary: MTech service health
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MtechHealth"
+  /mtech/llm/status:
+    get:
+      operationId: getLlmStatus
+      tags: [llm]
+      summary: Check the configured Local Colab LLM
+      responses:
+        "200":
+          description: LLM status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmStatus"
+  /mtech/llm/models:
+    get:
+      operationId: getLlmModels
+      tags: [llm]
+      summary: Discover models from the local endpoint
+      responses:
+        "200":
+          description: Available models
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
+  /mtech/llm/config:
+    get:
+      operationId: getLlmConfig
+      tags: [llm]
+      summary: Read safe LLM configuration
+      responses:
+        "200":
+          description: Safe configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmConfig"
+    patch:
+      operationId: updateLlmConfig
+      tags: [llm]
+      summary: Update Local Colab LLM configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LlmConfigInput"
+      responses:
+        "200":
+          description: Updated safe configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmConfig"
+  /mtech/llm/test:
+    post:
+      operationId: testLlmConnection
+      tags: [llm]
+      summary: Make a real connection test against the LLM
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmTestResult"
+  /mtech/llm/chat:
+    post:
+      operationId: chatWithLlm
+      tags: [llm]
+      summary: Send a chat request to the orchestrator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "200":
+          description: Assistant response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+  /mtech/llm/stream:
+    post:
+      operationId: streamLlmChat
+      tags: [llm]
+      summary: Stream a chat response from Local Colab
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "200":
+          description: Server-sent event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /mtech/projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List workspaces
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /mtech/projects/{projectId}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get a workspace
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+  /mtech/projects/{projectId}/tasks:
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      summary: List project tasks
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentTask"
+  /mtech/projects/{projectId}/agents:
+    get:
+      operationId: listAgents
+      tags: [agents]
+      summary: List project agents
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+  /mtech/projects/{projectId}/activity:
+    get:
+      operationId: listActivity
+      tags: [activity]
+      summary: List recent agent activity
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Activity events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEvent"
+  /mtech/projects/{projectId}/files/download:
+    get:
+      operationId: downloadProjectFile
+      tags: [files]
+      summary: Download one workspace file
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Workspace-relative file path.
+      responses:
+        "200":
+          description: Workspace file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid file path
+        "404":
+          description: File not found
+  /mtech/projects/{projectId}/download.zip:
+    get:
+      operationId: downloadProjectZip
+      tags: [files]
+      summary: Download the workspace as a ZIP archive
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Workspace ZIP archive
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Project not found
+        "413":
+          description: Workspace exceeds the configured archive limit
+  /mtech/projects/{projectId}/preview:
+    get:
+      operationId: getPreview
+      tags: [preview]
+      summary: Get preview status
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Preview status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewStatus"
+  /mtech/projects/{projectId}/preview/start:
+    post:
+      operationId: startPreview
+      tags: [preview]
+      summary: Start a project preview
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Preview status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewStatus"
+  /mtech/projects/{projectId}/preview/stop:
+    post:
+      operationId: stopPreview
+      tags: [preview]
+      summary: Stop a project preview
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Preview status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewStatus"
+  /mtech/projects/{projectId}/preview/restart:
+    post:
+      operationId: restartPreview
+      tags: [preview]
+      summary: Restart a project preview
+      parameters:
+        - $ref: "#/components/parameters/ProjectId"
+      responses:
+        "200":
+          description: Preview status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PreviewStatus"
+components:
+  parameters:
+    ProjectId:
+      name: projectId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+    MtechHealth:
+      type: object
+      required: [status, service, version]
+      properties:
+        status: { type: string }
+        service: { type: string }
+        version: { type: string }
+    LlmConfig:
+      type: object
+      required: [provider, endpoint, model, apiKeyConfigured, timeout, maxTokens, temperature]
+      properties:
+        provider: { type: string }
+        endpoint: { type: string }
+        model: { type: string }
+        apiKeyConfigured: { type: boolean }
+        timeout: { type: integer }
+        maxTokens: { type: integer }
+        temperature: { type: number }
+    LlmConfigInput:
+      type: object
+      properties:
+        endpoint: { type: string }
+        model: { type: string }
+        timeout: { type: integer }
+        maxTokens: { type: integer }
+        temperature: { type: number }
+    LlmStatus:
+      allOf:
+        - $ref: "#/components/schemas/LlmConfig"
+        - type: object
+          required: [connected, latency, lastCheck, error]
+          properties:
+            connected: { type: boolean }
+            latency: { type: ["integer", "null"] }
+            lastCheck: { type: ["string", "null"], format: date-time }
+            error: { type: ["string", "null"] }
+    Model:
+      type: object
+      required: [id, ownedBy]
+      properties:
+        id: { type: string }
+        ownedBy: { type: string }
+    ModelList:
+      type: object
+      required: [models]
+      properties:
+        models:
+          type: array
+          items: { $ref: "#/components/schemas/Model" }
+    LlmTestResult:
+      type: object
+      required: [connected, latency, message, model]
+      properties:
+        connected: { type: boolean }
+        latency: { type: ["integer", "null"] }
+        message: { type: string }
+        model: { type: string }
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content: { type: string }
+    ChatInput:
+      type: object
+      required: [projectId, message]
+      properties:
+        projectId: { type: string }
+        message: { type: string, minLength: 1 }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/ChatMessage" }
+    ChatResponse:
+      type: object
+      required: [message, taskId, activity]
+      properties:
+        message: { type: string }
+        taskId: { type: string }
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ActivityEvent" }
+    Project:
+      type: object
+      required: [id, name, description, status, branch, updatedAt, files, progress]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [active, paused, archived]
+        branch: { type: string }
+        updatedAt: { type: string, format: date-time }
+        files:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectFile" }
+        progress: { type: integer }
+    ProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+    ProjectFile:
+      type: object
+      required: [path, kind, language, size, modified]
+      properties:
+        path: { type: string }
+        kind:
+          type: string
+          enum: [file, folder]
+        language: { type: string }
+        size: { type: integer }
+        modified: { type: boolean }
+    Agent:
+      type: object
+      required: [id, name, role, status, currentTask, progress, lastAction, changedFiles]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string }
+        status:
+          type: string
+          enum: [running, complete, queued, blocked]
+        currentTask: { type: string }
+        progress: { type: integer }
+        lastAction: { type: string }
+        changedFiles: { type: integer }
+    AgentTask:
+      type: object
+      required: [id, projectId, agentId, title, description, status, priority, dependencies, createdAt, attempts]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        agentId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        status:
+          type: string
+          enum: [queued, planning, running, waiting, completed, failed, retrying, cancelled]
+        priority: { type: string, enum: [low, medium, high] }
+        dependencies:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        attempts: { type: integer }
+    ActivityEvent:
+      type: object
+      required: [id, agent, action, detail, timestamp, type]
+      properties:
+        id: { type: string }
+        agent: { type: string }
+        action: { type: string }
+        detail: { type: string }
+        timestamp: { type: string, format: date-time }
+        type: { type: string, enum: [agent, system, success, warning] }
+    PreviewStatus:
+      type: object
+      required: [status, url, port]
+      properties:
+        status: { type: string, enum: [running, stopped, starting] }
+        url: { type: ["string", "null"] }
+        port: { type: ["integer", "null"] }

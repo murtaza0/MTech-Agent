@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "MTech AI Agent Platform"
+description = "An independent multi-agent software development workspace with chat, editor, file explorer, preview, task activity, and Local Colab AI controls."
+version = "1.0.0"
+id = "artifacts/mtech"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18326
+
+[services.development]
+run = "pnpm --filter @workspace/mtech run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mtech", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/mtech/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18326"
+BASE_PATH = "/"
