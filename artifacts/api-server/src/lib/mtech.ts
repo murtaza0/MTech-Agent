@@ -90,7 +90,7 @@ export class LocalColabLLMProvider {
     return this.getConfig();
   }
   async models() {
-    const response = await withTimeout((signal) => fetch(`${trimEndpoint(config.endpoint)}/models`, { headers: jsonHeaders, signal }), config.timeout);
+    const response = await withTimeout((signal) => fetch(`${trimEndpoint(config.endpoint)}/models`, { headers: jsonHeaders, signal }), Math.max(config.timeout, 30000));
     if (!response.ok) throw new Error(await parseError(response));
     const payload = await response.json() as { data?: Array<{ id?: string; owned_by?: string }> };
     return (payload.data ?? []).map((model) => ({ id: model.id ?? "unknown", ownedBy: model.owned_by ?? "local" }));
@@ -110,21 +110,31 @@ export class LocalColabLLMProvider {
   }
   async status() { if (!lastStatus.lastCheck) await this.testConnection(); return { ...this.getConfig(), ...lastStatus }; }
   async chat(messages: ChatMessage[]) {
-    const response = await withTimeout((signal) => fetch(`${trimEndpoint(config.endpoint)}/chat/completions`, {
-      method: "POST", headers: jsonHeaders, signal,
-      body: JSON.stringify({ model: config.model, messages, max_tokens: config.maxTokens, temperature: config.temperature, stream: false }),
-    }), config.timeout);
-    if (!response.ok) throw new Error(await parseError(response));
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const content = payload.choices?.[0]?.message?.content;
-    if (!content) throw new Error("The Local Colab response did not include assistant content.");
-    return content;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await withTimeout((signal) => fetch(`${trimEndpoint(config.endpoint)}/chat/completions`, {
+          method: "POST", headers: jsonHeaders, signal,
+          body: JSON.stringify({ model: config.model, messages, max_tokens: config.maxTokens, temperature: config.temperature, stream: false }),
+        }), Math.max(config.timeout, 120000));
+        if (!response.ok) throw new Error(await parseError(response));
+        const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+        const content = payload.choices?.[0]?.message?.content;
+        if (!content) throw new Error("The Local Colab response did not include assistant content.");
+        lastStatus = { connected: true, latency: null, lastCheck: now(), error: null };
+        return content;
+      } catch (error) {
+        lastError = error;
+        if (attempt < 2) await new Promise((resolvePromise) => setTimeout(resolvePromise, 750));
+      }
+    }
+    throw new Error(lastError instanceof Error ? lastError.message : "Unable to reach Local Colab.");
   }
   async stream(messages: ChatMessage[]) {
     return withTimeout((signal) => fetch(`${trimEndpoint(config.endpoint)}/chat/completions`, {
       method: "POST", headers: jsonHeaders, signal,
       body: JSON.stringify({ model: config.model, messages, max_tokens: config.maxTokens, temperature: config.temperature, stream: true }),
-    }), config.timeout);
+    }), Math.max(config.timeout, 120000));
   }
 }
 export const llmProvider = new LocalColabLLMProvider();
@@ -316,8 +326,7 @@ const packageAt = (root: string) => {
 };
 const findPreviewRoot = (root: string) => {
   const direct = packageAt(root); if (direct?.scripts?.dev || direct?.scripts?.start || direct?.scripts?.preview) return { root, package: direct };
-  for (const candidate of ["artifacts/mtech", "app", "web", "frontend"]) { const child = resolve(root, candidate); const pkg = packageAt(child); if (pkg?.scripts?.dev || pkg?.scripts?.start || pkg?.scripts?.preview) return { root: child, package: pkg };
-  }
+  for (const candidate of ["artifacts/mtech", "app", "web", "frontend"]) { const child = resolve(root, candidate); const pkg = packageAt(child); if (pkg?.scripts?.dev || pkg?.scripts?.start || pkg?.scripts?.preview) return { root: child, package: pkg }; }
   return null;
 };
 type Preview = { status: "running" | "stopped" | "starting"; url: string | null; port: number | null; pid?: number; framework?: string; error?: string };
