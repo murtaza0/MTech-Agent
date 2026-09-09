@@ -9,7 +9,6 @@ from __future__ import annotations
 
 
 def register(*_args, **_kwargs) -> None:
-    """Compatibility no-op retained for older integrations."""
     return None
 
 
