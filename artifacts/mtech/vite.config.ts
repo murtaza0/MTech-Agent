@@ -5,12 +5,20 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT ?? '5173';
+// In the MTech Colab stack, PORT is reserved for the public ingress (:8000),
+// while Vite runs independently on the frontend port (:3001 by default).
+// Prefer the dedicated frontend variables so an inherited PORT cannot make
+// Vite collide with the ingress server.
+const rawPort =
+  process.env.VITE_FRONTEND_PORT ??
+  process.env.VITE_PORT ??
+  process.env.PORT ??
+  '5173';
 
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
+  throw new Error(`Invalid Vite port value: "${rawPort}"`);
 }
 
 const basePath = process.env.BASE_PATH ?? '/';
