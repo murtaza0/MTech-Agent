@@ -4,15 +4,15 @@
  * MTech Colab full-stack launcher.
  *
  * Colab-safe launcher. It starts OpenHands agent-server, automation, Vite,
- * and the ingress proxy from the current MTech checkout. It intentionally
- * imports the compatibility canvas_ui_tool module from tools/ so the current
- * OpenHands server can preload legacy conversation metadata without failing.
+ * and ingress from the current MTech checkout. The compatibility module under
+ * tools/ is explicitly added to PYTHONPATH and imported by agent-server so
+ * legacy persisted conversation metadata does not abort startup.
  */
 
 import { spawn } from "node:child_process";
 import { createServer, request as httpRequest } from "node:http";
 import { createConnection } from "node:net";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
 
@@ -95,8 +95,7 @@ function proxyHttp(req, res) {
     method: req.method,
     headers: { ...req.headers, host: `${target.hostname}:${target.port}` },
   }, r => {
-    const headers = { ...r.headers };
-    res.writeHead(r.statusCode || 502, headers);
+    res.writeHead(r.statusCode || 502, r.headers);
     r.pipe(res);
   });
   upstream.on("error", e => {
@@ -159,7 +158,9 @@ async function main() {
   process.env.OH_CANVAS_SAFE_STATE_DIR = STATE_DIR;
 
   const python = process.env.OH_PYTHON || "/content/openhands-venv/bin/python";
+  const toolsDir = join(ROOT, "tools");
   const agentEnv = {
+    PYTHONPATH: [toolsDir, process.env.PYTHONPATH].filter(Boolean).join(":"),
     PYTHONUTF8: "1",
     OH_PERSISTENCE_DIR: dirname(STATE_DIR),
     OH_CONVERSATIONS_PATH: join(STATE_DIR, "dev_conversations"),
@@ -167,7 +168,7 @@ async function main() {
     OH_SECRET_KEY: secretKey,
     OH_SESSION_API_KEYS_0: apiKey,
     AGENT_SERVER_URL: `http://127.0.0.1:${AGENT_PORT}`,
-    OH_EXTRA_PYTHON_PATH: join(ROOT, "tools"),
+    OH_EXTRA_PYTHON_PATH: toolsDir,
     TMUX_TMPDIR: join(STATE_DIR, "tmux"),
     OH_VSCODE_PORT: String(VSCODE_PORT),
     OH_VSCODE_BASE_PATH: "/vscode",
@@ -175,7 +176,7 @@ async function main() {
   };
   for (const p of [agentEnv.OH_CONVERSATIONS_PATH, agentEnv.OH_BASH_EVENTS_DIR, agentEnv.TMUX_TMPDIR]) mkdirSync(p, { recursive: true });
 
-  const agent = spawnService("agent-server", python, ["-m", "openhands.agent_server", "--host", "127.0.0.1", "--port", String(AGENT_PORT), "--extra-python-path", join(ROOT, "tools"), "--import-modules", "canvas_ui_tool"], agentEnv);
+  const agent = spawnService("agent-server", python, ["-m", "openhands.agent_server", "--host", "127.0.0.1", "--port", String(AGENT_PORT), "--extra-python-path", toolsDir, "--import-modules", "canvas_ui_tool"], agentEnv);
   const ready = await waitFor(`http://127.0.0.1:${AGENT_PORT}/server_info`, 90000);
   if (!ready) throw new Error(`Agent Server did not open ${AGENT_PORT}`);
   log("agent-server", `READY http://127.0.0.1:${AGENT_PORT}`);
