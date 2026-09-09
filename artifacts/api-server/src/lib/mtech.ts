@@ -31,7 +31,7 @@ const maxDownloadBytes = Number(process.env.MTECH_MAX_DOWNLOAD_BYTES ?? 32 * 102
 const defaultConfig: LlmConfigState = {
   endpoint: process.env.LLM_BASE_URL ?? "http://127.0.0.1:8100/v1",
   model: process.env.LLM_MODEL ?? "openai/deepseek-coder-6.7b-instruct",
-  timeout: Number(process.env.LLM_TIMEOUT ?? 20000),
+  timeout: Number(process.env.LLM_TIMEOUT ?? 120000),
   maxTokens: Number(process.env.LLM_MAX_TOKENS ?? 2048),
   temperature: Number(process.env.LLM_TEMPERATURE ?? 0.2),
 };
@@ -316,7 +316,8 @@ const packageAt = (root: string) => {
 };
 const findPreviewRoot = (root: string) => {
   const direct = packageAt(root); if (direct?.scripts?.dev || direct?.scripts?.start || direct?.scripts?.preview) return { root, package: direct };
-  for (const candidate of ["artifacts/mtech", "app", "web", "frontend"]) { const child = resolve(root, candidate); const pkg = packageAt(child); if (pkg?.scripts?.dev || pkg?.scripts?.start || pkg?.scripts?.preview) return { root: child, package: pkg }; }
+  for (const candidate of ["artifacts/mtech", "app", "web", "frontend"]) { const child = resolve(root, candidate); const pkg = packageAt(child); if (pkg?.scripts?.dev || pkg?.scripts?.start || pkg?.scripts?.preview) return { root: child, package: pkg };
+  }
   return null;
 };
 type Preview = { status: "running" | "stopped" | "starting"; url: string | null; port: number | null; pid?: number; framework?: string; error?: string };
